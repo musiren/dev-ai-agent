@@ -16,26 +16,38 @@ from PyQt6.QtGui import QFont
 
 RECORDS_FILE = Path.home() / ".sudoku_records.json"
 
+DIFFICULTY = {
+    "쉬움":  45,
+    "보통":  35,
+    "어려움": 25,
+}
+
 
 # ── Record storage ────────────────────────────────────────────────────────────
 
-def load_records() -> list[dict]:
+def load_records() -> dict[str, list[dict]]:
     if RECORDS_FILE.exists():
         try:
-            return json.loads(RECORDS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(RECORDS_FILE.read_text(encoding="utf-8"))
+            # 이전 포맷(list) 호환
+            if isinstance(data, list):
+                return {"보통": data}
+            return data
         except (json.JSONDecodeError, OSError):
-            return []
-    return []
+            return {}
+    return {}
 
 
-def save_record(elapsed_seconds: int) -> list[dict]:
-    records = load_records()
+def save_record(elapsed_seconds: int, difficulty: str) -> list[dict]:
+    all_records = load_records()
+    records = all_records.get(difficulty, [])
     records.append({
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "time": elapsed_seconds,
     })
     records.sort(key=lambda r: r["time"])
-    RECORDS_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    all_records[difficulty] = records
+    RECORDS_FILE.write_text(json.dumps(all_records, ensure_ascii=False, indent=2), encoding="utf-8")
     return records
 
 
@@ -151,28 +163,60 @@ class SudokuCell(QLineEdit):
 # ── Records dialog ────────────────────────────────────────────────────────────
 
 class RecordsDialog(QDialog):
-    def __init__(self, records: list[dict], parent=None):
+    def __init__(self, all_records: dict[str, list[dict]], current_diff: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("기록")
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(360)
         layout = QVBoxLayout(self)
 
-        if not records:
-            layout.addWidget(QLabel("기록이 없습니다."))
-        else:
-            table = QTableWidget(len(records), 3)
-            table.setHorizontalHeaderLabels(["순위", "시간", "날짜"])
-            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            for i, rec in enumerate(records):
-                table.setItem(i, 0, QTableWidgetItem(f"{i + 1}위"))
-                table.setItem(i, 1, QTableWidgetItem(fmt_time(rec["time"])))
-                table.setItem(i, 2, QTableWidgetItem(rec["date"]))
-            layout.addWidget(table)
+        # 난이도별 탭 버튼
+        diff_row = QHBoxLayout()
+        self._tables: dict[str, QWidget] = {}
+        self._diff_btns: dict[str, QPushButton] = {}
+
+        from PyQt6.QtWidgets import QStackedWidget
+        self._stack = QStackedWidget()
+
+        for diff in DIFFICULTY:
+            btn = QPushButton(diff)
+            btn.setCheckable(True)
+            btn.setFixedHeight(32)
+            btn.clicked.connect(lambda _, d=diff: self._switch(d))
+            diff_row.addWidget(btn)
+            self._diff_btns[diff] = btn
+
+            records = all_records.get(diff, [])
+            page = QWidget()
+            page_layout = QVBoxLayout(page)
+            page_layout.setContentsMargins(0, 0, 0, 0)
+            if not records:
+                page_layout.addWidget(QLabel("기록이 없습니다."))
+            else:
+                table = QTableWidget(len(records), 3)
+                table.setHorizontalHeaderLabels(["순위", "시간", "날짜"])
+                table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+                for i, rec in enumerate(records):
+                    table.setItem(i, 0, QTableWidgetItem(f"{i + 1}위"))
+                    table.setItem(i, 1, QTableWidgetItem(fmt_time(rec["time"])))
+                    table.setItem(i, 2, QTableWidgetItem(rec["date"]))
+                page_layout.addWidget(table)
+            self._stack.addWidget(page)
+
+        layout.addLayout(diff_row)
+        layout.addWidget(self._stack)
 
         close_btn = QPushButton("닫기")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
+
+        self._switch(current_diff)
+
+    def _switch(self, diff: str):
+        idx = list(DIFFICULTY.keys()).index(diff)
+        self._stack.setCurrentIndex(idx)
+        for d, btn in self._diff_btns.items():
+            btn.setChecked(d == diff)
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -186,6 +230,7 @@ class SudokuWindow(QMainWindow):
         self.cells: list[list[SudokuCell]] = []
         self._elapsed = 0
         self._finished = False
+        self._difficulty = "보통"
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._build_ui()
@@ -203,6 +248,19 @@ class SudokuWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Arial", 22, QFont.Weight.Bold))
         root.addWidget(title)
+
+        # Difficulty selector
+        diff_row = QHBoxLayout()
+        self._diff_btns: dict[str, QPushButton] = {}
+        for diff in DIFFICULTY:
+            btn = QPushButton(diff)
+            btn.setCheckable(True)
+            btn.setFixedHeight(30)
+            btn.setFont(QFont("Arial", 10))
+            btn.clicked.connect(lambda _, d=diff: self._set_difficulty(d))
+            diff_row.addWidget(btn)
+            self._diff_btns[diff] = btn
+        root.addLayout(diff_row)
 
         # Timer
         self.timer_label = QLabel("00:00")
@@ -268,8 +326,22 @@ class SudokuWindow(QMainWindow):
 
     # ── Game ──────────────────────────────────────────────────────────────────
 
+    def _set_difficulty(self, diff: str):
+        self._difficulty = diff
+        self.new_game()
+
+    def _update_diff_buttons(self):
+        for diff, btn in self._diff_btns.items():
+            btn.setChecked(diff == self._difficulty)
+            btn.setStyleSheet(
+                "background:#4a90d9; color:white; border-radius:4px;"
+                if diff == self._difficulty else ""
+            )
+
     def new_game(self):
-        self.puzzle, self.solution = generate_puzzle(clues=35)
+        self._update_diff_buttons()
+        clues = DIFFICULTY[self._difficulty]
+        self.puzzle, self.solution = generate_puzzle(clues=clues)
         for r in range(9):
             for c in range(9):
                 cell = self.cells[r][c]
@@ -295,7 +367,7 @@ class SudokuWindow(QMainWindow):
         self._finished = True
         self._stop_timer()
         self.timer_label.setStyleSheet("color: #2a7a2a;")
-        records = save_record(self._elapsed)
+        records = save_record(self._elapsed, self._difficulty)
         rank = next(i + 1 for i, r in enumerate(records) if r["time"] == self._elapsed)
         best = fmt_time(records[0]["time"])
         self.status.setText(
@@ -374,8 +446,8 @@ class SudokuWindow(QMainWindow):
         self.status.setText("정답을 공개했습니다.")
 
     def show_records(self):
-        records = load_records()
-        dlg = RecordsDialog(records, self)
+        all_records = load_records()
+        dlg = RecordsDialog(all_records, self._difficulty, self)
         dlg.exec()
 
     def _is_complete(self) -> bool:
