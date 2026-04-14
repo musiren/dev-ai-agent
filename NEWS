@@ -1,0 +1,17 @@
+NEWS -- Notable changes for dev-ai-agent
+=========================================
+
+v20260413 (2026-04-13)
+-----------------------
+
+Added:
+  - Add basic Python project directory structure (233c848)
+    Create src, tests, and docs directories with initial
+    placeholder files to establish Python project layout.
+  - Add .worktrees/ to .gitignore (aa28747)
+
+Changed:
+  (none)
+
+Fixed:
+  (none)
