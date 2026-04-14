@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스도쿠</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 24px 12px;
+  }
+
+  .container {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    padding: 28px 32px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 500px;
+  }
+
+  h1 { font-size: 28px; color: #1a1a2e; letter-spacing: 2px; }
+
+  /* 난이도 */
+  .diff-group {
+    display: flex;
+    gap: 8px;
+  }
+  .diff-btn {
+    padding: 6px 18px;
+    border: 2px solid #d0d0d0;
+    border-radius: 20px;
+    background: white;
+    color: #555;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all .18s;
+  }
+  .diff-btn.active {
+    background: #4a90d9;
+    border-color: #4a90d9;
+    color: white;
+    font-weight: 600;
+  }
+
+  /* 타이머 */
+  .timer {
+    font-size: 26px;
+    font-family: 'Consolas', monospace;
+    font-weight: 700;
+    color: #333;
+    letter-spacing: 3px;
+  }
+  .timer.done { color: #2a7a2a; }
+
+  /* 보드 */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    border: 3px solid #333;
+    width: 100%;
+    max-width: 468px;
+    aspect-ratio: 1;
+  }
+
+  .cell {
+    border: 1px solid #bbb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(14px, 3vw, 20px);
+    font-weight: 700;
+    color: #222;
+    background: white;
+    cursor: text;
+    transition: background .12s;
+    aspect-ratio: 1;
+    position: relative;
+  }
+  .cell input {
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: center;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    cursor: text;
+    caret-color: #4a90d9;
+  }
+  /* 3×3 박스 굵은 테두리 */
+  .cell:nth-child(3n+1) { border-left: 2px solid #444; }
+  .cell:nth-child(9n+7),
+  .cell:nth-child(9n+8),
+  .cell:nth-child(9n+9) { border-bottom: 2px solid #444; }
+  .cell:nth-child(-n+9)  { border-top: 2px solid #444; }
+  .cell:nth-child(9n)    { border-right: 2px solid #444; }
+
+  .cell.fixed   { background: #f0f0f0; color: #333; cursor: default; }
+  .cell.error   { background: #ffe0e0; color: red; }
+  .cell.hint    { background: #fff3cd; color: #856404; }
+  .cell.selected { background: #e8f0fe; }
+
+  /* 버튼 */
+  .btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .btn {
+    padding: 9px 18px;
+    border: none;
+    border-radius: 8px;
+    background: #4a90d9;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  .btn:hover  { background: #357abd; }
+  .btn:active { transform: scale(.97); }
+  .btn.secondary { background: #6c757d; }
+  .btn.secondary:hover { background: #545b62; }
+
+  /* 상태 메시지 */
+  .status {
+    font-size: 14px;
+    color: #444;
+    min-height: 20px;
+    text-align: center;
+  }
+
+  /* 모달 */
+  .modal-bg {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 14px;
+    padding: 24px;
+    width: 360px;
+    max-width: 95vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 14px; color: #1a1a2e; }
+
+  /* 탭 */
+  .tab-group { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab-btn {
+    padding: 5px 14px;
+    border: 2px solid #d0d0d0;
+    border-radius: 16px;
+    background: white;
+    color: #555;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: #4a90d9;
+    border-color: #4a90d9;
+    color: white;
+    font-weight: 600;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px; text-align: center; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; font-weight: 600; color: #444; }
+  tr:last-child td { border-bottom: none; }
+
+  .modal-close {
+    display: block;
+    margin-top: 14px;
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 8px;
+    background: #6c757d;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .modal-close:hover { background: #545b62; }
+
+  .no-record { color: #aaa; text-align: center; padding: 16px 0; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>스도쿠</h1>
+
+  <div class="diff-group" id="diffGroup"></div>
+
+  <div class="timer" id="timer">00:00</div>
+
+  <div class="board" id="board"></div>
+
+  <div class="btn-group">
+    <button class="btn" onclick="newGame()">새 게임</button>
+    <button class="btn" onclick="showHint()">힌트</button>
+    <button class="btn" onclick="validate()">검증</button>
+    <button class="btn secondary" onclick="revealSolution()">정답</button>
+    <button class="btn secondary" onclick="openRecords()">기록</button>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<!-- Records modal -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeRecords()">
+  <div class="modal">
+    <h2>기록</h2>
+    <div class="tab-group" id="tabGroup"></div>
+    <div id="recordTable"></div>
+    <button class="modal-close" onclick="closeRecords()">닫기</button>
+  </div>
+</div>
+
+<script>
+// ── 설정 ──────────────────────────────────────────────────────────────────────
+const DIFFICULTY = { '쉬움': 45, '보통': 35, '어려움': 25 };
+const STORAGE_KEY = 'sudoku_records';
+
+let puzzle = [], solution = [], cells = [];
+let elapsed = 0, finished = false, timerID = null;
+let difficulty = '보통';
+
+// ── 퍼즐 생성 ─────────────────────────────────────────────────────────────────
+function isValid(board, row, col, num) {
+  if (board[row].includes(num)) return false;
+  if (board.some(r => r[col] === num)) return false;
+  const br = Math.floor(row / 3) * 3, bc = Math.floor(col / 3) * 3;
+  for (let r = br; r < br + 3; r++)
+    for (let c = bc; c < bc + 3; c++)
+      if (board[r][c] === num) return false;
+  return true;
+}
+
+function solve(board) {
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (board[row][col] === 0) {
+        const nums = shuffle([1,2,3,4,5,6,7,8,9]);
+        for (const num of nums) {
+          if (isValid(board, row, col, num)) {
+            board[row][col] = num;
+            if (solve(board)) return true;
+            board[row][col] = 0;
+          }
+        }
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function generatePuzzle(clues) {
+  const sol = Array.from({length: 9}, () => Array(9).fill(0));
+  solve(sol);
+  const puz = sol.map(r => [...r]);
+  const positions = shuffle([...Array(81).keys()]);
+  for (let k = 0; k < 81 - clues; k++) {
+    const i = positions[k];
+    puz[Math.floor(i / 9)][i % 9] = 0;
+  }
+  return [puz, sol];
+}
+
+// ── 타이머 ────────────────────────────────────────────────────────────────────
+function fmtTime(s) {
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function startTimer() {
+  if (timerID) clearInterval(timerID);
+  elapsed = 0; finished = false;
+  const el = document.getElementById('timer');
+  el.textContent = '00:00';
+  el.className = 'timer';
+  timerID = setInterval(() => {
+    elapsed++;
+    el.textContent = fmtTime(elapsed);
+  }, 1000);
+}
+
+function stopTimer() { if (timerID) { clearInterval(timerID); timerID = null; } }
+
+// ── 보드 UI ───────────────────────────────────────────────────────────────────
+function buildBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  cells = [];
+  for (let r = 0; r < 9; r++) {
+    cells.push([]);
+    for (let c = 0; c < 9; c++) {
+      const div = document.createElement('div');
+      div.className = 'cell';
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.maxLength = 1;
+      inp.addEventListener('input', () => onInput(r, c, inp));
+      inp.addEventListener('keydown', e => onKey(e, r, c));
+      div.appendChild(inp);
+      board.appendChild(div);
+      cells[r].push({ div, inp });
+    }
+  }
+}
+
+function setCell(r, c, val, fixed) {
+  const { div, inp } = cells[r][c];
+  inp.value = val || '';
+  inp.readOnly = fixed;
+  div.className = 'cell' + (fixed ? ' fixed' : '');
+}
+
+function markCell(r, c, cls) {
+  const { div } = cells[r][c];
+  if (!div.classList.contains('fixed')) {
+    div.className = 'cell ' + cls;
+  }
+}
+
+function cellValue(r, c) {
+  const v = parseInt(cells[r][c].inp.value);
+  return (v >= 1 && v <= 9) ? v : 0;
+}
+
+function currentBoard(skipR, skipC) {
+  return Array.from({length: 9}, (_, r) =>
+    Array.from({length: 9}, (_, c) =>
+      (r === skipR && c === skipC) ? 0 : cellValue(r, c)
+    )
+  );
+}
+
+function onKey(e, r, c) {
+  const moves = { ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1] };
+  if (moves[e.key]) {
+    e.preventDefault();
+    const [dr, dc] = moves[e.key];
+    const nr = Math.max(0, Math.min(8, r + dr));
+    const nc = Math.max(0, Math.min(8, c + dc));
+    cells[nr][nc].inp.focus();
+  }
+}
+
+function onInput(r, c, inp) {
+  if (finished) { inp.value = ''; return; }
+  const v = inp.value.replace(/[^1-9]/g, '');
+  inp.value = v.slice(-1);
+  markCell(r, c, '');
+  const val = cellValue(r, c);
+  if (val && !isValid(currentBoard(r, c), r, c, val)) {
+    markCell(r, c, 'error');
+  }
+  if (isComplete()) complete();
+}
+
+// ── 게임 제어 ─────────────────────────────────────────────────────────────────
+function newGame() {
+  updateDiffButtons();
+  const [puz, sol] = generatePuzzle(DIFFICULTY[difficulty]);
+  puzzle = puz; solution = sol;
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      setCell(r, c, puzzle[r][c] || '', !!puzzle[r][c]);
+  document.getElementById('status').textContent = '';
+  startTimer();
+}
+
+function isComplete() {
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (cellValue(r, c) !== solution[r][c]) return false;
+  return true;
+}
+
+function complete() {
+  finished = true;
+  stopTimer();
+  const el = document.getElementById('timer');
+  el.className = 'timer done';
+  const records = saveRecord(elapsed, difficulty);
+  const rank = records.findIndex(rec => rec.time === elapsed) + 1;
+  const best = fmtTime(records[0].time);
+  document.getElementById('status').textContent =
+    `🎉 완성! ${fmtTime(elapsed)} — ${rank}위  |  최고기록: ${best}`;
+}
+
+function validate() {
+  let errors = 0;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (cells[r][c].div.classList.contains('fixed')) continue;
+      const v = cellValue(r, c);
+      if (v === 0)             markCell(r, c, '');
+      else if (v !== solution[r][c]) { markCell(r, c, 'error'); errors++; }
+      else                     markCell(r, c, '');
+    }
+  }
+  if (errors === 0 && isComplete()) complete();
+  else if (errors) setStatus(`오류 ${errors}개를 찾았습니다.`);
+  else setStatus('아직 빈 칸이 있습니다.');
+}
+
+function candidates(board, row, col) {
+  const used = new Set([
+    ...board[row],
+    ...board.map(r => r[col]),
+    ...((() => {
+      const br = Math.floor(row/3)*3, bc = Math.floor(col/3)*3, res = [];
+      for (let r = br; r < br+3; r++) for (let c = bc; c < bc+3; c++) res.push(board[r][c]);
+      return res;
+    })())
+  ]);
+  return [1,2,3,4,5,6,7,8,9].filter(n => !used.has(n));
+}
+
+function showHint() {
+  const board = currentBoard();
+  let bestCell = null, bestCount = 10;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (cells[r][c].div.classList.contains('fixed')) continue;
+      if (cellValue(r, c) === solution[r][c]) continue;
+      const orig = board[r][c];
+      board[r][c] = 0;
+      const count = candidates(board, r, c).length;
+      board[r][c] = orig;
+      if (count < bestCount) { bestCount = count; bestCell = [r, c]; }
+    }
+  }
+  if (!bestCell) { setStatus('모든 칸이 올바릅니다!'); return; }
+  const [r, c] = bestCell;
+  cells[r][c].inp.value = solution[r][c];
+  markCell(r, c, 'hint');
+  setStatus(`힌트: (${r+1}, ${c+1}) 칸 — 후보 ${bestCount}개 중 정답`);
+  if (isComplete()) complete();
+}
+
+function revealSolution() {
+  stopTimer(); finished = true;
+  for (let r = 0; r < 9; r++)
+    for (let c = 0; c < 9; c++)
+      if (!cells[r][c].div.classList.contains('fixed')) {
+        cells[r][c].inp.value = solution[r][c];
+        markCell(r, c, '');
+      }
+  setStatus('정답을 공개했습니다.');
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+// ── 난이도 버튼 ───────────────────────────────────────────────────────────────
+function buildDiffButtons() {
+  const group = document.getElementById('diffGroup');
+  group.innerHTML = '';
+  for (const d of Object.keys(DIFFICULTY)) {
+    const btn = document.createElement('button');
+    btn.className = 'diff-btn' + (d === difficulty ? ' active' : '');
+    btn.textContent = d;
+    btn.onclick = () => { difficulty = d; newGame(); };
+    group.appendChild(btn);
+  }
+}
+
+function updateDiffButtons() {
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent === difficulty);
+  });
+}
+
+// ── 기록 ─────────────────────────────────────────────────────────────────────
+function loadAllRecords() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveRecord(secs, diff) {
+  const all = loadAllRecords();
+  const list = all[diff] || [];
+  list.push({ time: secs, date: new Date().toLocaleString('ko-KR') });
+  list.sort((a, b) => a.time - b.time);
+  all[diff] = list;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  return list;
+}
+
+let activeTab = difficulty;
+function openRecords() {
+  activeTab = difficulty;
+  renderModal();
+  document.getElementById('modalBg').classList.add('open');
+}
+function closeRecords() { document.getElementById('modalBg').classList.remove('open'); }
+
+function renderModal() {
+  const all = loadAllRecords();
+  const tabGroup = document.getElementById('tabGroup');
+  tabGroup.innerHTML = '';
+  for (const d of Object.keys(DIFFICULTY)) {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (d === activeTab ? ' active' : '');
+    btn.textContent = d;
+    btn.onclick = () => { activeTab = d; renderModal(); };
+    tabGroup.appendChild(btn);
+  }
+  const records = all[activeTab] || [];
+  const el = document.getElementById('recordTable');
+  if (!records.length) {
+    el.innerHTML = '<p class="no-record">기록이 없습니다.</p>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <tr><th>순위</th><th>시간</th><th>날짜</th></tr>
+    ${records.map((r, i) => `<tr><td>${i+1}위</td><td>${fmtTime(r.time)}</td><td>${r.date}</td></tr>`).join('')}
+  </table>`;
+}
+
+// ── 초기화 ────────────────────────────────────────────────────────────────────
+buildDiffButtons();
+buildBoard();
+newGame();
+</script>
+</body>
+</html>
