@@ -1,15 +1,46 @@
 """PyQt6 Sudoku Game — standalone, no API key required."""
 
 import sys
+import json
 import random
 import copy
+from datetime import datetime
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QGridLayout,
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QMessageBox,
+    QDialog, QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
+
+RECORDS_FILE = Path.home() / ".sudoku_records.json"
+
+
+# ── Record storage ────────────────────────────────────────────────────────────
+
+def load_records() -> list[dict]:
+    if RECORDS_FILE.exists():
+        try:
+            return json.loads(RECORDS_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+    return []
+
+
+def save_record(elapsed_seconds: int) -> list[dict]:
+    records = load_records()
+    records.append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "time": elapsed_seconds,
+    })
+    records.sort(key=lambda r: r["time"])
+    RECORDS_FILE.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    return records
+
+
+def fmt_time(seconds: int) -> str:
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
 # ── Sudoku logic ──────────────────────────────────────────────────────────────
@@ -58,10 +89,10 @@ def generate_puzzle(clues: int = 35) -> tuple[list[list[int]], list[list[int]]]:
 # ── Cell widget ───────────────────────────────────────────────────────────────
 
 class SudokuCell(QLineEdit):
-    NORMAL_STYLE = "background: white; color: #222; border: 1px solid #bbb;"
-    FIXED_STYLE  = "background: #f0f0f0; color: #333; border: 1px solid #bbb; font-weight: bold;"
-    ERROR_STYLE  = "background: #ffe0e0; color: red; border: 1px solid red;"
-    HINT_STYLE   = "background: #fff3cd; color: #856404; border: 1px solid #ffc107;"
+    NORMAL_STYLE = "background: white; color: #222;"
+    FIXED_STYLE  = "background: #f0f0f0; color: #333; font-weight: bold;"
+    ERROR_STYLE  = "background: #ffe0e0; color: red;"
+    HINT_STYLE   = "background: #fff3cd; color: #856404;"
 
     def __init__(self, row: int, col: int):
         super().__init__()
@@ -72,18 +103,18 @@ class SudokuCell(QLineEdit):
         self.setMaxLength(1)
         self.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.setFixedSize(52, 52)
-        self._set_border_style()
-        self.setStyleSheet(self.NORMAL_STYLE + self._border_css())
+        self._border = self._border_css()
+        self.setStyleSheet(self.NORMAL_STYLE + self._border)
 
     def _border_css(self) -> str:
         t = "2px" if self.row % 3 == 0 else "1px"
         b = "2px" if self.row == 8 else "1px"
         l = "2px" if self.col % 3 == 0 else "1px"
         r = "2px" if self.col == 8 else "1px"
-        return f"border-top:{t} solid #555; border-bottom:{b} solid #555; border-left:{l} solid #555; border-right:{r} solid #555;"
-
-    def _set_border_style(self):
-        self._border = self._border_css()
+        return (
+            f"border-top:{t} solid #555; border-bottom:{b} solid #555;"
+            f"border-left:{l} solid #555; border-right:{r} solid #555;"
+        )
 
     def set_fixed(self, value: int):
         self.fixed = True
@@ -117,6 +148,33 @@ class SudokuCell(QLineEdit):
             return 0
 
 
+# ── Records dialog ────────────────────────────────────────────────────────────
+
+class RecordsDialog(QDialog):
+    def __init__(self, records: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("기록")
+        self.setMinimumWidth(320)
+        layout = QVBoxLayout(self)
+
+        if not records:
+            layout.addWidget(QLabel("기록이 없습니다."))
+        else:
+            table = QTableWidget(len(records), 3)
+            table.setHorizontalHeaderLabels(["순위", "시간", "날짜"])
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            for i, rec in enumerate(records):
+                table.setItem(i, 0, QTableWidgetItem(f"{i + 1}위"))
+                table.setItem(i, 1, QTableWidgetItem(fmt_time(rec["time"])))
+                table.setItem(i, 2, QTableWidgetItem(rec["date"]))
+            layout.addWidget(table)
+
+        close_btn = QPushButton("닫기")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 class SudokuWindow(QMainWindow):
@@ -126,6 +184,10 @@ class SudokuWindow(QMainWindow):
         self.puzzle: list[list[int]] = []
         self.solution: list[list[int]] = []
         self.cells: list[list[SudokuCell]] = []
+        self._elapsed = 0
+        self._finished = False
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
         self._build_ui()
         self.new_game()
 
@@ -133,7 +195,7 @@ class SudokuWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setSpacing(12)
+        root.setSpacing(10)
         root.setContentsMargins(20, 20, 20, 20)
 
         # Title
@@ -141,6 +203,13 @@ class SudokuWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setFont(QFont("Arial", 22, QFont.Weight.Bold))
         root.addWidget(title)
+
+        # Timer
+        self.timer_label = QLabel("00:00")
+        self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.timer_label.setFont(QFont("Consolas", 18, QFont.Weight.Bold))
+        self.timer_label.setStyleSheet("color: #333;")
+        root.addWidget(self.timer_label)
 
         # Grid
         grid_widget = QWidget()
@@ -160,14 +229,15 @@ class SudokuWindow(QMainWindow):
         # Buttons
         btn_row = QHBoxLayout()
         for label, slot in [
-            ("새 게임", self.new_game),
-            ("힌트",   self.show_hint),
-            ("검증",   self.validate),
-            ("정답",   self.reveal_solution),
+            ("새 게임",  self.new_game),
+            ("힌트",    self.show_hint),
+            ("검증",    self.validate),
+            ("정답",    self.reveal_solution),
+            ("기록",    self.show_records),
         ]:
             btn = QPushButton(label)
             btn.setFixedHeight(38)
-            btn.setFont(QFont("Arial", 12))
+            btn.setFont(QFont("Arial", 11))
             btn.clicked.connect(slot)
             btn_row.addWidget(btn)
         root.addLayout(btn_row)
@@ -180,6 +250,24 @@ class SudokuWindow(QMainWindow):
 
         self.setFixedSize(self.sizeHint())
 
+    # ── Timer ─────────────────────────────────────────────────────────────────
+
+    def _tick(self):
+        self._elapsed += 1
+        self.timer_label.setText(fmt_time(self._elapsed))
+
+    def _start_timer(self):
+        self._elapsed = 0
+        self._finished = False
+        self.timer_label.setText("00:00")
+        self.timer_label.setStyleSheet("color: #333;")
+        self._timer.start(1000)
+
+    def _stop_timer(self):
+        self._timer.stop()
+
+    # ── Game ──────────────────────────────────────────────────────────────────
+
     def new_game(self):
         self.puzzle, self.solution = generate_puzzle(clues=35)
         for r in range(9):
@@ -190,14 +278,29 @@ class SudokuWindow(QMainWindow):
                 else:
                     cell.set_empty()
         self.status.setText("")
+        self._start_timer()
 
     def _on_input(self, row: int, col: int):
-        """입력 시 해당 셀만 실시간 유효성 표시."""
+        if self._finished:
+            return
         cell = self.cells[row][col]
         cell.mark_normal()
         v = cell.value()
         if v and not _is_valid(self._current_board(skip=(row, col)), row, col, v):
             cell.mark_error()
+        if self._is_complete():
+            self._complete()
+
+    def _complete(self):
+        self._finished = True
+        self._stop_timer()
+        self.timer_label.setStyleSheet("color: #2a7a2a;")
+        records = save_record(self._elapsed)
+        rank = next(i + 1 for i, r in enumerate(records) if r["time"] == self._elapsed)
+        best = fmt_time(records[0]["time"])
+        self.status.setText(
+            f"🎉 완성! {fmt_time(self._elapsed)} — {rank}위  |  최고기록: {best}"
+        )
 
     def _current_board(self, skip: tuple | None = None) -> list[list[int]]:
         board = [[0] * 9 for _ in range(9)]
@@ -209,7 +312,6 @@ class SudokuWindow(QMainWindow):
         return board
 
     def validate(self):
-        """전체 보드 검증 — 틀린 칸 강조."""
         errors = 0
         for r in range(9):
             for c in range(9):
@@ -225,14 +327,13 @@ class SudokuWindow(QMainWindow):
                 else:
                     cell.mark_normal()
         if errors == 0 and self._is_complete():
-            self.status.setText("🎉 완성! 축하합니다!")
+            self._complete()
         elif errors:
             self.status.setText(f"오류 {errors}개를 찾았습니다.")
         else:
             self.status.setText("아직 빈 칸이 있습니다.")
 
     def _candidates(self, board: list[list[int]], row: int, col: int) -> list[int]:
-        """해당 칸에 올 수 있는 후보 숫자 목록 반환."""
         used = set(board[row])
         used |= {board[r][col] for r in range(9)}
         br, bc = (row // 3) * 3, (col // 3) * 3
@@ -240,36 +341,30 @@ class SudokuWindow(QMainWindow):
         return [n for n in range(1, 10) if n not in used]
 
     def show_hint(self):
-        """후보 숫자가 가장 적은 칸(제일 쉬운 칸)에 힌트 표시."""
         board = self._current_board()
-        best_cell = None
-        best_count = 10
-
+        best_cell, best_count = None, 10
         for r in range(9):
             for c in range(9):
                 cell = self.cells[r][c]
                 if cell.fixed or cell.value() == self.solution[r][c]:
                     continue
-                # 틀린 값이 입력된 칸은 일단 비워서 후보 계산
                 original = board[r][c]
                 board[r][c] = 0
                 count = len(self._candidates(board, r, c))
                 board[r][c] = original
                 if count < best_count:
-                    best_count = count
-                    best_cell = (r, c)
-
+                    best_count, best_cell = count, (r, c)
         if best_cell is None:
             self.status.setText("모든 칸이 올바릅니다!")
             return
-
         r, c = best_cell
         self.cells[r][c].setText(str(self.solution[r][c]))
         self.cells[r][c].mark_hint()
         self.status.setText(f"힌트: ({r+1}, {c+1}) 칸 — 후보 {best_count}개 중 정답")
 
     def reveal_solution(self):
-        """정답 전체 공개."""
+        self._stop_timer()
+        self._finished = True
         for r in range(9):
             for c in range(9):
                 cell = self.cells[r][c]
@@ -277,6 +372,11 @@ class SudokuWindow(QMainWindow):
                     cell.setText(str(self.solution[r][c]))
                     cell.mark_normal()
         self.status.setText("정답을 공개했습니다.")
+
+    def show_records(self):
+        records = load_records()
+        dlg = RecordsDialog(records, self)
+        dlg.exec()
 
     def _is_complete(self) -> bool:
         for r in range(9):
