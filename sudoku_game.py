@@ -231,17 +231,42 @@ class SudokuWindow(QMainWindow):
         else:
             self.status.setText("아직 빈 칸이 있습니다.")
 
+    def _candidates(self, board: list[list[int]], row: int, col: int) -> list[int]:
+        """해당 칸에 올 수 있는 후보 숫자 목록 반환."""
+        used = set(board[row])
+        used |= {board[r][col] for r in range(9)}
+        br, bc = (row // 3) * 3, (col // 3) * 3
+        used |= {board[r][c] for r in range(br, br + 3) for c in range(bc, bc + 3)}
+        return [n for n in range(1, 10) if n not in used]
+
     def show_hint(self):
-        """비어 있거나 틀린 칸 중 하나에 힌트 표시."""
+        """후보 숫자가 가장 적은 칸(제일 쉬운 칸)에 힌트 표시."""
+        board = self._current_board()
+        best_cell = None
+        best_count = 10
+
         for r in range(9):
             for c in range(9):
                 cell = self.cells[r][c]
-                if not cell.fixed and cell.value() != self.solution[r][c]:
-                    cell.setText(str(self.solution[r][c]))
-                    cell.mark_hint()
-                    self.status.setText(f"힌트: ({r+1}, {c+1}) 칸을 채웠습니다.")
-                    return
-        self.status.setText("모든 칸이 올바릅니다!")
+                if cell.fixed or cell.value() == self.solution[r][c]:
+                    continue
+                # 틀린 값이 입력된 칸은 일단 비워서 후보 계산
+                original = board[r][c]
+                board[r][c] = 0
+                count = len(self._candidates(board, r, c))
+                board[r][c] = original
+                if count < best_count:
+                    best_count = count
+                    best_cell = (r, c)
+
+        if best_cell is None:
+            self.status.setText("모든 칸이 올바릅니다!")
+            return
+
+        r, c = best_cell
+        self.cells[r][c].setText(str(self.solution[r][c]))
+        self.cells[r][c].mark_hint()
+        self.status.setText(f"힌트: ({r+1}, {c+1}) 칸 — 후보 {best_count}개 중 정답")
 
     def reveal_solution(self):
         """정답 전체 공개."""
