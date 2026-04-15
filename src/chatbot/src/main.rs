@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use axum::{routing::{get, post}, Router, Json};
 use serde::{Deserialize, Serialize};
 
