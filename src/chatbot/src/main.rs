@@ -32,6 +32,13 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("챗봇 서버 실행 중: http://localhost:3000");
+
+    // 브라우저 자동 실행
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "http://localhost:3000"])
+        .spawn()
+        .ok();
+
     axum::serve(listener, app).await.unwrap();
 }
 
