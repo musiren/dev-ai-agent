@@ -91,6 +91,7 @@ async def test_browse_invalid_session():
 
 @pytest.mark.asyncio
 async def test_upload_files(mock_paramiko):
+
     mock_p, mock_client, mock_sftp = mock_paramiko
     mock_sftp.putfo = MagicMock()
 
@@ -125,3 +126,22 @@ async def test_upload_invalid_session():
             files=[("files", ("test.txt", b"data", "text/plain"))],
         )
     assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_disconnect(mock_paramiko):
+    mock_p, mock_client, mock_sftp = mock_paramiko
+    from ssh_uploader.app import app, sessions
+    test_session_id = "disconnect-session-789"
+    sessions[test_session_id] = (mock_client, mock_sftp)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/disconnect",
+            json={"session_id": test_session_id},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"status": "disconnected"}
+    assert test_session_id not in sessions
+    mock_sftp.close.assert_called_once()
+    mock_client.close.assert_called_once()

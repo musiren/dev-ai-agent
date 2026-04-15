@@ -95,6 +95,19 @@ async def upload(
     return {"results": results}
 
 
+class DisconnectRequest(BaseModel):
+    session_id: str
+
+@app.post("/api/disconnect")
+async def disconnect(req: DisconnectRequest):
+    if req.session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    client, sftp = sessions.pop(req.session_id)
+    sftp.close()
+    client.close()
+    return {"status": "disconnected"}
+
+
 @app.get("/")
 async def index():
     return FileResponse("ssh_uploader/upload.html")
