@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>SSH File Uploader</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+  /* 연결 바 */
+  #connect-bar {
+    display: flex; gap: 8px; align-items: center;
+    padding: 10px 16px; background: #1e293b; border-bottom: 1px solid #334155;
+    flex-wrap: wrap;
+  }
+  #connect-bar input {
+    background: #0f172a; border: 1px solid #475569; color: #e2e8f0;
+    padding: 6px 10px; border-radius: 4px; font-size: 13px;
+  }
+  #connect-bar input[name="host"] { width: 180px; }
+  #connect-bar input[name="username"] { width: 120px; }
+  #connect-bar input[name="port"] { width: 60px; }
+  #key-label {
+    background: #1e40af; color: white; padding: 6px 12px;
+    border-radius: 4px; font-size: 13px; cursor: pointer;
+  }
+  #key-filename { font-size: 12px; color: #94a3b8; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #btn-connect {
+    background: #4f46e5; color: white; border: none;
+    padding: 6px 16px; border-radius: 4px; font-size: 13px; cursor: pointer;
+  }
+  #btn-connect:hover { background: #4338ca; }
+  #btn-disconnect {
+    background: #dc2626; color: white; border: none;
+    padding: 6px 12px; border-radius: 4px; font-size: 13px; cursor: pointer; display: none;
+  }
+  #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+  #status-dot.connected { background: #22c55e; }
+  #status-text { font-size: 12px; color: #94a3b8; }
+
+  /* 메인 패널 */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* 원격 트리 */
+  #remote-panel {
+    width: 260px; border-right: 1px solid #334155;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #remote-header {
+    padding: 8px 12px; font-size: 12px; color: #94a3b8;
+    background: #1e293b; border-bottom: 1px solid #334155;
+    display: flex; align-items: center; gap: 6px;
+  }
+  #remote-path { font-size: 11px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #remote-tree { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .tree-entry {
+    padding: 5px 12px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px; user-select: none;
+  }
+  .tree-entry:hover { background: #1e293b; }
+  .tree-entry.selected { background: #1e3a5f; }
+  .tree-entry.dir { color: #93c5fd; }
+  .tree-entry.file { color: #cbd5e1; }
+
+  /* 업로드 패널 */
+  #upload-panel { flex: 1; display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow: hidden; }
+  #upload-target { font-size: 12px; color: #94a3b8; }
+  #upload-target span { color: #60a5fa; font-weight: bold; }
+
+  #drop-zone {
+    border: 2px dashed #475569; border-radius: 8px;
+    padding: 24px; text-align: center; color: #64748b;
+    transition: border-color 0.2s, background 0.2s; cursor: pointer;
+  }
+  #drop-zone.dragover { border-color: #6366f1; background: #1e1b4b; color: #a5b4fc; }
+  #drop-zone svg { width: 36px; height: 36px; margin-bottom: 8px; }
+  #drop-zone p { font-size: 14px; margin-bottom: 4px; }
+  #drop-zone small { font-size: 12px; }
+  #file-input { display: none; }
+
+  #file-list { flex: 1; overflow-y: auto; }
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 4px; font-size: 13px;
+    background: #1e293b; margin-bottom: 4px;
+  }
+  .file-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-item .fsize { font-size: 11px; color: #64748b; white-space: nowrap; }
+  .file-item .fremove { color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1; }
+  .file-item .fstatus { font-size: 11px; padding: 2px 6px; border-radius: 8px; }
+  .fstatus.ok { background: #052e16; color: #4ade80; }
+  .fstatus.error { background: #450a0a; color: #f87171; }
+
+  #actions { display: flex; gap: 8px; align-items: center; }
+  #btn-upload {
+    background: #059669; color: white; border: none;
+    padding: 8px 20px; border-radius: 4px; font-size: 14px; cursor: pointer;
+  }
+  #btn-upload:hover { background: #047857; }
+  #btn-upload:disabled { background: #334155; cursor: not-allowed; }
+  #upload-summary { font-size: 12px; color: #94a3b8; }
+
+  #progress-bar-wrap { background: #1e293b; height: 4px; border-radius: 2px; overflow: hidden; display: none; }
+  #progress-bar { height: 100%; background: #4f46e5; transition: width 0.3s; width: 0%; }
+</style>
+</head>
+<body>
+
+<!-- 연결 바 -->
+<div id="connect-bar">
+  <input name="host" placeholder="host (예: 192.168.1.10)" />
+  <input name="port" placeholder="22" value="22" />
+  <input name="username" placeholder="username" />
+  <label id="key-label" for="file-input-key">🔑 키 선택</label>
+  <input type="file" id="file-input-key" accept=".pem,.key,*" style="display:none"/>
+  <span id="key-filename">키 파일 없음</span>
+  <button id="btn-connect">연결</button>
+  <button id="btn-disconnect">연결 해제</button>
+  <div id="status-dot"></div>
+  <span id="status-text">미연결</span>
+</div>
+
+<!-- 메인 -->
+<div id="main">
+  <!-- 원격 트리 -->
+  <div id="remote-panel">
+    <div id="remote-header">
+      📂 원격 디렉토리
+      <span id="remote-path"></span>
+    </div>
+    <div id="remote-tree"><div style="padding:12px;color:#475569;font-size:12px;">연결 후 디렉토리가 표시됩니다</div></div>
+  </div>
+
+  <!-- 업로드 -->
+  <div id="upload-panel">
+    <div id="upload-target">업로드 대상: <span id="target-display">—</span></div>
+
+    <div id="drop-zone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 10l-4-4-4 4M12 6v10"/>
+      </svg>
+      <p>파일을 여기에 드래그하거나</p>
+      <small>클릭해서 파일 선택</small>
+    </div>
+    <input type="file" id="file-input" multiple />
+
+    <div id="file-list"></div>
+
+    <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+    <div id="actions">
+      <button id="btn-upload" disabled>📤 업로드</button>
+      <span id="upload-summary"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let sessionId = null;
+let selectedPath = null;
+let filesToUpload = [];
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function setStatus(connected, text) {
+  document.getElementById('status-dot').className = connected ? 'connected' : '';
+  document.getElementById('status-text').textContent = text;
+  document.getElementById('btn-connect').style.display = connected ? 'none' : '';
+  document.getElementById('btn-disconnect').style.display = connected ? '' : 'none';
+}
+
+document.getElementById('file-input-key').addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  document.getElementById('key-filename').textContent = f ? f.name : '키 파일 없음';
+});
+
+document.getElementById('btn-connect').addEventListener('click', async () => {
+  const host = document.querySelector('[name=host]').value.trim();
+  const port = document.querySelector('[name=port]').value.trim() || '22';
+  const username = document.querySelector('[name=username]').value.trim();
+  const keyFile = document.getElementById('file-input-key').files[0];
+  if (!host || !username || !keyFile) { alert('host, username, SSH 키 파일을 모두 입력하세요.'); return; }
+  setStatus(false, '연결 중...');
+  const form = new FormData();
+  form.append('host', host); form.append('port', port);
+  form.append('username', username); form.append('key_file', keyFile);
+  try {
+    const res = await fetch('/api/connect', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '연결 실패');
+    sessionId = data.session_id;
+    setStatus(true, `${username}@${host} 연결됨`);
+    await browseDir('/');
+  } catch (e) { setStatus(false, '미연결'); alert('연결 오류: ' + e.message); }
+});
+
+document.getElementById('btn-disconnect').addEventListener('click', async () => {
+  if (!sessionId) return;
+  await fetch('/api/disconnect', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: sessionId}),
+  });
+  sessionId = null; selectedPath = null;
+  setStatus(false, '미연결');
+  document.getElementById('remote-tree').innerHTML = '<div style="padding:12px;color:#475569;font-size:12px;">연결 후 디렉토리가 표시됩니다</div>';
+  document.getElementById('remote-path').textContent = '';
+  document.getElementById('target-display').textContent = '—';
+  updateUploadBtn();
+});
+
+async function browseDir(path) {
+  if (!sessionId) return;
+  const res = await fetch(`/api/browse?session_id=${sessionId}&path=${encodeURIComponent(path)}`);
+  if (!res.ok) { alert('디렉토리 목록 조회 실패'); return; }
+  const data = await res.json();
+  document.getElementById('remote-path').textContent = data.path;
+  renderTree(data.entries, data.path);
+}
+
+function renderTree(entries, currentPath) {
+  const tree = document.getElementById('remote-tree');
+  tree.innerHTML = '';
+  if (currentPath !== '/') {
+    const parent = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
+    const up = document.createElement('div');
+    up.className = 'tree-entry dir'; up.textContent = '↑ ..';
+    up.addEventListener('click', () => browseDir(parent));
+    tree.appendChild(up);
+  }
+  entries.forEach(entry => {
+    const el = document.createElement('div');
+    el.className = `tree-entry ${entry.type}`;
+    el.textContent = (entry.type === 'dir' ? '📂 ' : '📄 ') + entry.name;
+    el.dataset.path = entry.path;
+    if (entry.type === 'dir') {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.tree-entry').forEach(e => e.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedPath = entry.path;
+        document.getElementById('target-display').textContent = entry.path;
+        updateUploadBtn();
+        browseDir(entry.path);
+      });
+    }
+    tree.appendChild(el);
+  });
+}
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => addFiles(e.target.files));
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); addFiles(e.dataTransfer.files); });
+
+function addFiles(fileList) {
+  Array.from(fileList).forEach(f => { if (!filesToUpload.find(x => x.name === f.name)) filesToUpload.push(f); });
+  renderFileList(); updateUploadBtn();
+}
+
+function renderFileList() {
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+  filesToUpload.forEach((f, i) => {
+    const el = document.createElement('div');
+    el.className = 'file-item';
+    el.innerHTML = `<span class="fname">${f.name}</span><span class="fsize">${formatSize(f.size)}</span><span class="fremove" data-idx="${i}">×</span>`;
+    list.appendChild(el);
+  });
+  list.querySelectorAll('.fremove').forEach(btn => {
+    btn.addEventListener('click', () => { filesToUpload.splice(parseInt(btn.dataset.idx), 1); renderFileList(); updateUploadBtn(); });
+  });
+}
+
+function updateUploadBtn() {
+  const btn = document.getElementById('btn-upload');
+  btn.disabled = !(sessionId && selectedPath && filesToUpload.length > 0);
+  document.getElementById('upload-summary').textContent = filesToUpload.length > 0 ? `${filesToUpload.length}개 파일 선택됨` : '';
+}
+
+document.getElementById('btn-upload').addEventListener('click', async () => {
+  if (!sessionId || !selectedPath || filesToUpload.length === 0) return;
+  const progressWrap = document.getElementById('progress-bar-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  progressWrap.style.display = 'block'; progressBar.style.width = '0%';
+  const form = new FormData();
+  form.append('session_id', sessionId); form.append('target_path', selectedPath);
+  filesToUpload.forEach(f => form.append('files', f));
+  let progress = 0;
+  const fakeProgress = setInterval(() => { progress = Math.min(progress + 5, 90); progressBar.style.width = progress + '%'; }, 200);
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    clearInterval(fakeProgress); progressBar.style.width = '100%';
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '업로드 실패');
+    const list = document.getElementById('file-list');
+    list.querySelectorAll('.file-item').forEach((el, i) => {
+      const result = data.results[i];
+      const statusEl = document.createElement('span');
+      statusEl.className = `fstatus ${result.status}`;
+      statusEl.textContent = result.status === 'ok' ? '완료' : '오류';
+      el.querySelector('.fremove').replaceWith(statusEl);
+      if (result.error) { const errEl = document.createElement('span'); errEl.style = 'font-size:11px;color:#f87171;'; errEl.textContent = result.error; el.appendChild(errEl); }
+    });
+    const okCount = data.results.filter(r => r.status === 'ok').length;
+    document.getElementById('upload-summary').textContent = `✅ ${okCount}/${data.results.length}개 완료`;
+    filesToUpload = [];
+    setTimeout(() => { progressWrap.style.display = 'none'; progressBar.style.width = '0%'; }, 2000);
+  } catch (e) { clearInterval(fakeProgress); progressWrap.style.display = 'none'; alert('업로드 오류: ' + e.message); }
+});
+</script>
+</body>
+</html>
