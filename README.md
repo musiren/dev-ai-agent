@@ -104,13 +104,15 @@ dev-ai-agent/
 │   │   ├── april.py       # Tester 에이전트
 │   │   ├── may.py         # Reviewer 에이전트
 │   │   └── june.py        # Orchestrator 에이전트
+│   ├── ssh_uploader/
+│   │   ├── app.py         # FastAPI 서버
+│   │   ├── upload.html    # 프론트엔드
+│   │   └── requirements.txt
+│   ├── sudoku/
+│   │   ├── sudoku_game.py # PyQt6 스도쿠 게임
+│   │   └── sudoku.html    # 웹 버전
 │   └── main.py            # 진입점
-├── ssh_uploader/
-│   ├── app.py             # FastAPI 서버
-│   ├── upload.html        # 프론트엔드
-│   └── requirements.txt
-├── sudoku_game.py         # PyQt6 스도쿠 게임
-├── index.html             # 웹 스도쿠 (GitHub Pages)
+├── index.html             # GitHub Pages 진입점
 ├── tests/                 # pytest 테스트 스위트
 ├── pyproject.toml
 └── .env.example
