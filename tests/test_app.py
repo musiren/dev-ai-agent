@@ -48,3 +48,43 @@ async def test_connect_auth_failure(mock_paramiko):
             files={"key_file": ("id_rsa", b"-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----", "text/plain")},
         )
     assert response.status_code == 401
+
+@pytest.mark.asyncio
+async def test_browse_directory(mock_paramiko):
+    mock_p, mock_client, mock_sftp = mock_paramiko
+    # SFTP listdir_attr mock
+    entry_dir = MagicMock()
+    entry_dir.filename = "uploads"
+    entry_dir.st_mode = 0o040755  # 디렉토리
+    entry_file = MagicMock()
+    entry_file.filename = "readme.txt"
+    entry_file.st_mode = 0o100644  # 파일
+    mock_sftp.listdir_attr.return_value = [entry_dir, entry_file]
+
+    # 먼저 세션 생성
+    from ssh_uploader.app import app, sessions
+    test_session_id = "test-session-123"
+    sessions[test_session_id] = (mock_client, mock_sftp)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/browse",
+            params={"session_id": test_session_id, "path": "/home/user"},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["entries"]) == 2
+    assert data["entries"][0] == {"name": "uploads", "type": "dir", "path": "/home/user/uploads"}
+    assert data["entries"][1] == {"name": "readme.txt", "type": "file", "path": "/home/user/readme.txt"}
+
+@pytest.mark.asyncio
+async def test_browse_invalid_session():
+    from ssh_uploader.app import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/browse",
+            params={"session_id": "invalid-session", "path": "/home/user"},
+        )
+    assert response.status_code == 404

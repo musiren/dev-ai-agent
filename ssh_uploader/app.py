@@ -1,4 +1,5 @@
 import io
+import stat
 import uuid
 from typing import List, Optional
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException
@@ -52,6 +53,24 @@ async def connect(
     session_id = str(uuid.uuid4())
     sessions[session_id] = (client, sftp)
     return {"session_id": session_id}
+
+
+@app.get("/api/browse")
+async def browse(session_id: str, path: str = "/"):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _, sftp = sessions[session_id]
+    try:
+        attrs = sftp.listdir_attr(path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot list directory: {str(e)}")
+
+    entries = []
+    for attr in sorted(attrs, key=lambda a: (not stat.S_ISDIR(a.st_mode), a.filename)):
+        entry_type = "dir" if stat.S_ISDIR(attr.st_mode) else "file"
+        full_path = f"{path.rstrip('/')}/{attr.filename}"
+        entries.append({"name": attr.filename, "type": entry_type, "path": full_path})
+    return {"entries": entries, "path": path}
 
 
 @app.get("/")
