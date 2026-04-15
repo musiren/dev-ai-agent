@@ -5,7 +5,7 @@ import io
 
 @pytest.fixture
 def mock_paramiko():
-    with patch("ssh_uploader.app.paramiko") as mock:
+    with patch("src.ssh_uploader.app.paramiko") as mock:
         mock_client = MagicMock()
         mock_sftp = MagicMock()
         mock_client.open_sftp.return_value = mock_sftp
@@ -22,7 +22,7 @@ def mock_paramiko():
 @pytest.mark.asyncio
 async def test_connect_success(mock_paramiko):
     mock_p, mock_client, _ = mock_paramiko
-    from ssh_uploader.app import app
+    from src.ssh_uploader.app import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -39,7 +39,7 @@ async def test_connect_auth_failure(mock_paramiko):
     mock_p, mock_client, _ = mock_paramiko
     import paramiko as real_paramiko
     mock_client.connect.side_effect = real_paramiko.AuthenticationException("auth failed")
-    from ssh_uploader.app import app
+    from src.ssh_uploader.app import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -62,7 +62,7 @@ async def test_browse_directory(mock_paramiko):
     mock_sftp.listdir_attr.return_value = [entry_dir, entry_file]
 
     # 먼저 세션 생성
-    from ssh_uploader.app import app, sessions
+    from src.ssh_uploader.app import app, sessions
     test_session_id = "test-session-123"
     sessions[test_session_id] = (mock_client, mock_sftp)
 
@@ -80,7 +80,7 @@ async def test_browse_directory(mock_paramiko):
 
 @pytest.mark.asyncio
 async def test_browse_invalid_session():
-    from ssh_uploader.app import app
+    from src.ssh_uploader.app import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
@@ -95,7 +95,7 @@ async def test_upload_files(mock_paramiko):
     mock_p, mock_client, mock_sftp = mock_paramiko
     mock_sftp.putfo = MagicMock()
 
-    from ssh_uploader.app import app, sessions
+    from src.ssh_uploader.app import app, sessions
     test_session_id = "upload-session-456"
     sessions[test_session_id] = (mock_client, mock_sftp)
 
@@ -117,7 +117,7 @@ async def test_upload_files(mock_paramiko):
 
 @pytest.mark.asyncio
 async def test_upload_invalid_session():
-    from ssh_uploader.app import app
+    from src.ssh_uploader.app import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -130,7 +130,7 @@ async def test_upload_invalid_session():
 @pytest.mark.asyncio
 async def test_disconnect(mock_paramiko):
     mock_p, mock_client, mock_sftp = mock_paramiko
-    from ssh_uploader.app import app, sessions
+    from src.ssh_uploader.app import app, sessions
     test_session_id = "disconnect-session-789"
     sessions[test_session_id] = (mock_client, mock_sftp)
 

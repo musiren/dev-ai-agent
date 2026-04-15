@@ -117,4 +117,4 @@ async def disconnect(req: DisconnectRequest):
 
 @app.get("/")
 async def index():
-    return FileResponse("ssh_uploader/upload.html")
+    return FileResponse("src/ssh_uploader/upload.html")
