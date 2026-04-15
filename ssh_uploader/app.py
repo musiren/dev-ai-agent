@@ -1,5 +1,4 @@
 import io
-import stat
 import uuid
 from typing import List, Optional
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException
@@ -45,7 +44,11 @@ async def connect(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Connection failed: {str(e)}")
 
-    sftp = client.open_sftp()
+    try:
+        sftp = client.open_sftp()
+    except Exception as e:
+        client.close()
+        raise HTTPException(status_code=503, detail=f"SFTP init failed: {str(e)}")
     session_id = str(uuid.uuid4())
     sessions[session_id] = (client, sftp)
     return {"session_id": session_id}
