@@ -66,10 +66,14 @@ async def browse(session_id: str, path: str = "/"):
         raise HTTPException(status_code=400, detail=f"Cannot list directory: {str(e)}")
 
     entries = []
-    for attr in sorted(attrs, key=lambda a: (not stat.S_ISDIR(a.st_mode), a.filename)):
-        entry_type = "dir" if stat.S_ISDIR(attr.st_mode) else "file"
-        full_path = f"{path.rstrip('/')}/{attr.filename}"
-        entries.append({"name": attr.filename, "type": entry_type, "path": full_path})
+    try:
+        sorted_attrs = sorted(attrs, key=lambda a: (not stat.S_ISDIR(a.st_mode or 0), a.filename))
+        for attr in sorted_attrs:
+            entry_type = "dir" if stat.S_ISDIR(attr.st_mode or 0) else "file"
+            full_path = f"{path.rstrip('/')}/{attr.filename}"
+            entries.append({"name": attr.filename, "type": entry_type, "path": full_path})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error parsing directory entries: {str(e)}")
     return {"entries": entries, "path": path}
 
 
@@ -103,8 +107,11 @@ async def disconnect(req: DisconnectRequest):
     if req.session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     client, sftp = sessions.pop(req.session_id)
-    sftp.close()
-    client.close()
+    try:
+        sftp.close()
+        client.close()
+    except Exception:
+        pass  # 세션은 이미 제거됨, 연결 오류는 무시
     return {"status": "disconnected"}
 
 
