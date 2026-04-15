@@ -1,4 +1,25 @@
-fn main() {}
+use std::io::{self, BufRead, Write};
+
+fn main() {
+    let stdin = io::stdin();
+    print!("> ");
+    io::stdout().flush().unwrap();
+
+    for line in stdin.lock().lines() {
+        let input = line.unwrap();
+        let trimmed = input.trim();
+
+        if let Some(response) = handle_input(trimmed) {
+            println!("{}", response);
+            if trimmed == "/종료" {
+                break;
+            }
+        }
+
+        print!("> ");
+        io::stdout().flush().unwrap();
+    }
+}
 
 /// 커맨드 입력을 처리한다.
 /// `/`로 시작하는 커맨드면 Some(응답), 일반 텍스트면 None 반환.
