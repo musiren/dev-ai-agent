@@ -88,3 +88,40 @@ async def test_browse_invalid_session():
             params={"session_id": "invalid-session", "path": "/home/user"},
         )
     assert response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_upload_files(mock_paramiko):
+    mock_p, mock_client, mock_sftp = mock_paramiko
+    mock_sftp.putfo = MagicMock()
+
+    from ssh_uploader.app import app, sessions
+    test_session_id = "upload-session-456"
+    sessions[test_session_id] = (mock_client, mock_sftp)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/upload",
+            data={"session_id": test_session_id, "target_path": "/home/user/uploads"},
+            files=[
+                ("files", ("hello.txt", b"hello world", "text/plain")),
+                ("files", ("data.csv", b"a,b,c\n1,2,3", "text/csv")),
+            ],
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["results"]) == 2
+    assert all(r["status"] == "ok" for r in data["results"])
+    assert mock_sftp.putfo.call_count == 2
+
+@pytest.mark.asyncio
+async def test_upload_invalid_session():
+    from ssh_uploader.app import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/upload",
+            data={"session_id": "no-such-session", "target_path": "/tmp"},
+            files=[("files", ("test.txt", b"data", "text/plain"))],
+        )
+    assert response.status_code == 404

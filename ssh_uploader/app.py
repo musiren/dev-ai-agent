@@ -73,6 +73,28 @@ async def browse(session_id: str, path: str = "/"):
     return {"entries": entries, "path": path}
 
 
+@app.post("/api/upload")
+async def upload(
+    session_id: str = Form(...),
+    target_path: str = Form(...),
+    files: List[UploadFile] = File(...),
+):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _, sftp = sessions[session_id]
+
+    results = []
+    for file in files:
+        try:
+            content = await file.read()
+            remote_path = f"{target_path.rstrip('/')}/{file.filename}"
+            sftp.putfo(io.BytesIO(content), remote_path)
+            results.append({"filename": file.filename, "status": "ok", "error": None})
+        except Exception as e:
+            results.append({"filename": file.filename, "status": "error", "error": str(e)})
+    return {"results": results}
+
+
 @app.get("/")
 async def index():
     return FileResponse("ssh_uploader/upload.html")
