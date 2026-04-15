@@ -101,9 +101,9 @@
     cursor: text;
     caret-color: #4a90d9;
   }
-  /* 3×3 박스 구분 — 굵은 테두리 */
-  .cell.thick-left { border-left:  3px solid #2c3e50; }
-  .cell.thick-top  { border-top:   3px solid #2c3e50; }
+  /* 3×3 박스 내부 구분선 (가로 2줄 · 세로 2줄) */
+  .cell.thick-right  { border-right:  3px solid #2c3e50; }
+  .cell.thick-bottom { border-bottom: 3px solid #2c3e50; }
 
   /* 3×3 박스 교차 배경색 */
   .cell.box-alt { background: #eaf3ff; }
@@ -326,10 +326,10 @@ function buildBoard() {
     cells.push([]);
     for (let c = 0; c < 9; c++) {
       const div = document.createElement('div');
-      const boxAlt = (Math.floor(r / 3) + Math.floor(c / 3)) % 2 === 1 ? ' box-alt' : '';
-      const thickTop  = r % 3 === 0 ? ' thick-top'  : '';
-      const thickLeft = c % 3 === 0 ? ' thick-left' : '';
-      div.dataset.base = 'cell' + boxAlt + thickTop + thickLeft;
+      const boxAlt     = (Math.floor(r / 3) + Math.floor(c / 3)) % 2 === 1 ? ' box-alt' : '';
+      const thickRight  = (c === 2 || c === 5) ? ' thick-right'  : '';
+      const thickBottom = (r === 2 || r === 5) ? ' thick-bottom' : '';
+      div.dataset.base = 'cell' + boxAlt + thickRight + thickBottom;
       div.className = div.dataset.base;
       const inp = document.createElement('input');
       inp.type = 'text';
