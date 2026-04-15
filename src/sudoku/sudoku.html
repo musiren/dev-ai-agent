@@ -101,18 +101,19 @@
     cursor: text;
     caret-color: #4a90d9;
   }
-  /* 3×3 박스 굵은 테두리 */
-  .cell:nth-child(3n+1) { border-left: 2px solid #444; }
-  .cell:nth-child(9n+7),
-  .cell:nth-child(9n+8),
-  .cell:nth-child(9n+9) { border-bottom: 2px solid #444; }
-  .cell:nth-child(-n+9)  { border-top: 2px solid #444; }
-  .cell:nth-child(9n)    { border-right: 2px solid #444; }
+  /* 3×3 박스 내부 구분선 (가로 2줄 · 세로 2줄) */
+  .cell.thick-right  { border-right:  3px solid #2c3e50; }
+  .cell.thick-bottom { border-bottom: 3px solid #2c3e50; }
 
-  .cell.fixed   { background: #f0f0f0; color: #333; cursor: default; }
-  .cell.error   { background: #ffe0e0; color: red; }
-  .cell.hint    { background: #fff3cd; color: #856404; }
-  .cell.selected { background: #e8f0fe; }
+  /* 3×3 박스 교차 배경색 */
+  .cell.box-alt { background: #eaf3ff; }
+
+  /* 상태 클래스 (box-alt보다 우선) */
+  .cell.fixed               { background: #e4e4e4; color: #333; cursor: default; }
+  .cell.box-alt.fixed       { background: #d8e8f5; color: #333; cursor: default; }
+  .cell.error               { background: #ffe0e0 !important; color: #c0392b; }
+  .cell.hint                { background: #fff3cd !important; color: #856404; }
+  .cell.selected            { background: #cfe2ff !important; }
 
   /* 버튼 */
   .btn-group {
@@ -325,7 +326,11 @@ function buildBoard() {
     cells.push([]);
     for (let c = 0; c < 9; c++) {
       const div = document.createElement('div');
-      div.className = 'cell';
+      const boxAlt     = (Math.floor(r / 3) + Math.floor(c / 3)) % 2 === 1 ? ' box-alt' : '';
+      const thickRight  = (c === 2 || c === 5) ? ' thick-right'  : '';
+      const thickBottom = (r === 2 || r === 5) ? ' thick-bottom' : '';
+      div.dataset.base = 'cell' + boxAlt + thickRight + thickBottom;
+      div.className = div.dataset.base;
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.maxLength = 1;
@@ -342,13 +347,13 @@ function setCell(r, c, val, fixed) {
   const { div, inp } = cells[r][c];
   inp.value = val || '';
   inp.readOnly = fixed;
-  div.className = 'cell' + (fixed ? ' fixed' : '');
+  div.className = div.dataset.base + (fixed ? ' fixed' : '');
 }
 
 function markCell(r, c, cls) {
   const { div } = cells[r][c];
   if (!div.classList.contains('fixed')) {
-    div.className = 'cell ' + cls;
+    div.className = div.dataset.base + (cls ? ' ' + cls : '');
   }
 }
 
